@@ -1,4 +1,4 @@
-1. Create your README.mdCreate a file named README.md in the root of your project directory and paste this exact content:Markdown# 🏨 BookingAssistantBot
+🏨 BookingAssistantBot
 
 A professional Telegram bot designed to manage resort room bookings, check real-time room availability, and streamline customer reservations using Python and PostgreSQL.
 
