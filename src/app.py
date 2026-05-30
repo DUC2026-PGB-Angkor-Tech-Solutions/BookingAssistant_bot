@@ -6,8 +6,11 @@ import threading
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
 
-# បន្ថែមរុក្ខវិថី (Path) ដើម្បីឱ្យ Python ស្គាល់ Folder ទាំងអស់នៅក្នុង src
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# 🌟 កែសម្រួល៖ ដោះស្រាយបញ្ហា Root Path ជាន់គ្នា (src/src) នៅលើ Cloud Render
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+if os.path.basename(current_dir) == 'src':
+    sys.path.append(os.path.dirname(current_dir))
 
 # --- ១. Import Handlers ពីការបំបែក Folder នីមួយៗ ---
 from handlers.startHandler import start
