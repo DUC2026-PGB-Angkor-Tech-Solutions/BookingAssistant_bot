@@ -92,9 +92,14 @@ class HealthCheckServer(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running 24/7 successfully!")
 
 def run_health_server(port):
-    server = HTTPServer(("0.0.0.0", port), HealthCheckServer)
-    print(f"🌍 Internal Health Check Server is listening on port {port}")
-    server.serve_forever()
+    # 🌟 បន្ថែម try-except ការពារករណី Render មិនទាន់ទម្លាក់ Port ចាស់ចោល (Errno 98 Address already in use)
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthCheckServer)
+        print(f"🌍 Internal Health Check Server is listening on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        print(f"⚠️ Warning: Health check server failed to bind on port {port}: {e}")
+        print("💡 Forcing Telegram Bot to continue running independently...")
 
 # --- ៥. ចំណុចចាប់ផ្ដើមរត់កម្មវិធី (Main Entry Point) ---
 if __name__ == '__main__':
