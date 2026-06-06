@@ -1,3 +1,4 @@
+import os
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.authUtils import is_admin
@@ -22,19 +23,32 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# --- ២. មុខងារ Admin មើលស្ថានភាពបន្ទប់ទាំងអស់ និងឈ្មោះអ្នកកក់ (កែសម្រួលថ្មី) ---
+# --- ២. មុខងារ Admin មើលស្ថានភាពបន្ទប់ រូបភាព និងព័ត៌មានអ្នកកក់លម្អិត (កែសម្រួលថ្មី) ---
 async def admin_room_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
     if not is_admin(telegram_id): return
 
     db = get_db_connection()
-    if not db: return
+    if not db: 
+        await update.message.reply_text("❌ មិនអាចភ្ជាប់ទៅកាន់ Database បានទេ។")
+        return
+    
+    await update.message.reply_text("📊 **កំពុងទាញយករបាយការណ៍ និងរូបភាពបន្ទប់ទាំងអស់ពី Cloud...**", parse_mode="Markdown")
     
     try:
         cursor = db.cursor()
-        # 🟢 ប្រើ LEFT JOIN ដើម្បីទាញយកឈ្មោះ full_name របស់ភ្ញៀវដែលបានកក់
+        # 🟢 កែសម្រួល SQL៖ ទាញយកព័ត៌មានកក់លម្អិត លេខទូរស័ព្ទ ថ្ងៃស្នាក់នៅ ចំនួនថ្ងៃ និងស្ថានភាពបង់ប្រាក់
         cursor.execute("""
-            SELECT r.room_number, r.room_type, r.status, u.full_name 
+            SELECT 
+                r.room_number, 
+                r.room_type, 
+                r.status, 
+                r.room_image_url,
+                u.full_name, 
+                u.phone_number,
+                b.checkin_date,
+                b.total_days,
+                b.payment_status
             FROM rooms r
             LEFT JOIN bookings b ON r.room_id = b.room_id
             LEFT JOIN users u ON b.user_id = u.user_id
@@ -44,27 +58,54 @@ async def admin_room_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.close()
         db.close()
 
-        response = "📊 **របាយការណ៍ស្ថានភាពបន្ទប់បច្ចុប្បន្ន៖**\n"
-        response += "----------------------------------------\n"
-        
+        # រត់ Loop ផ្ញើរាយការណ៍ចេញជារូបភាពមួយបន្ទប់ៗ
         for r in all_rooms:
-            room_number, room_type, status, customer_name = r
+            room_number, room_type, status, room_image_url, customer_name, phone_number, checkin_date, total_days, payment_status = r
+            
+            # រៀបចំ Caption ព័ត៌មានលម្អិតសម្រាប់បន្ទប់នីមួយៗ
+            report_text = f"🏨 **បន្ទប់លេខ៖ {room_number}** ({room_type})\n"
             
             if status == 'booked':
-                status_emoji = "🔴"
-                # បើមានឈ្មោះក្នុង Database ឱ្យបង្ហាញឈ្មោះ បើអត់ទេដាក់ថា មិនស្គាល់ឈ្មោះ
-                guest_info = f" (កក់ដោយ: {customer_name})" if customer_name else " (មិនស្គាល់ឈ្មោះ)"
-            else:
-                status_emoji = "🟢"
-                guest_info = "" # បើបន្ទប់នៅទំនេរ available មិនបាច់បង្ហាញឈ្មោះទេ
+                report_text += "🔴 ស្ថានភាព៖ **បានកក់**\n"
                 
-            response += f"{status_emoji} បន្ទប់ {room_number} ({room_type}) -> ស្ថានភាព: {status}{guest_info}\n"
-        
-        await update.message.reply_text(response)
-        
+                # បង្ហាញស្ថានភាពទូទាត់ប្រាក់ជាក់ស្តែង
+                if payment_status == 'paid':
+                    report_text += "💰 ការទូទាត់៖ 🟢 **បានទូទាត់ប្រាក់រួចរាល់**\n"
+                else:
+                    report_text += "💰 ការទូទាត់៖ 🟡 **មិនទាន់ទូទាត់ប្រាក់ទេ**\n"
+                    
+                # បន្ថែមព័ត៌មាន Chat កក់របស់ភ្ញៀវ
+                report_text += f"👤 អ្នកកក់៖ {customer_name or 'មិនស្គាល់ឈ្មោះ'}\n"
+                report_text += f"📱 លេខទូរស័ព្ទ៖ {phone_number or 'មិនទាន់បំពេញ'}\n"
+                report_text += f"📅 ថ្ងៃចូលស្នាក់នៅ៖ {checkin_date or 'មិនទាន់កំណត់'}\n"
+                report_text += f"⏳ រយៈពេលស្នាក់នៅ៖ {total_days or 1} ថ្ងៃ\n"
+            else:
+                report_text += "🟢 ស្ថានភាព៖ **ទំនេរ (Available)**\n"
+                report_text += "ℹ️ មិនទាន់មានការ Chat មកកក់ឡើយ។\n"
+                
+            report_text += "----------------------------------------"
+
+            # 🖼️ បើមាន Link រូបភាពក្នុង Table ឱ្យផ្ញើជារូបភាព បើអត់ទេផ្ញើជាអត្ថបទធម្មតា
+            if room_image_url and (room_image_url.startswith('http://') or room_image_url.startswith('https://')):
+                try:
+                    await update.message.reply_photo(photo=room_image_url, caption=report_text, parse_mode="Markdown")
+                except Exception as img_err:
+                    print(f"⚠️ Cannot send external image URL: {img_err}")
+                    await update.message.reply_text(report_text, parse_mode="Markdown")
+            else:
+                # ករណីរកមិនឃើញ Link លើ Cloud គឺទៅរកហ្វាយរូបភាពមូលដ្ឋានក្នុង assets កុំព្យូទ័រ
+                local_image_name = f"{room_type.lower()}.jpg"
+                image_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", local_image_name)
+                
+                if os.path.exists(image_path):
+                    with open(image_path, 'rb') as photo:
+                        await update.message.reply_photo(photo=photo, caption=report_text, parse_mode="Markdown")
+                else:
+                    await update.message.reply_text(report_text, parse_mode="Markdown")
+                    
     except Exception as e:
         print(f"❌ Admin Report Error: {e}")
-        await update.message.reply_text("❌ 有បញ្ហាបច្ចេកទេសក្នុងការទាញយករបាយការណ៍។")
+        await update.message.reply_text("❌ មានបញ្ហាបច្ចេកទេសក្នុងការទាញយករបាយការណ៍បន្ទប់។")
 
 # --- ៣. មុខងារ Admin សម្អាតបន្ទប់ទាំងអស់ឱ្យទំនេរឡើងវិញ (Reset System) ---
 async def admin_reset_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,7 +113,9 @@ async def admin_reset_rooms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(telegram_id): return
 
     db = get_db_connection()
-    if not db: return
+    if not db: 
+        await update.message.reply_text("❌ មិនអាចភ្ជាប់ទៅកាន់ Database បានទេ។")
+        return
 
     try:
         cursor = db.cursor()
